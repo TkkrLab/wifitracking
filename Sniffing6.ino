@@ -24,12 +24,13 @@ void loop() {
   if (channel == 15) channel = 1;
   wifi_set_channel(channel);
   Serial.println("CN " + String(channel));
-  for (int i = 0; i < 20; i++) {
+  delay(2000);
+  /*for (int i = 0; i < 20; i++) {
     delay(100);
     if (pktBuffPos > PKTLEN*5) {
       Serial.println(pktBuff);
       pktBuffPos = 0;
     }
-  }
+  }*/
   channel++;
 }

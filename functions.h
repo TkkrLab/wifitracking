@@ -20,26 +20,20 @@ extern "C" {
 #define PKTLEN 48
 #define PKTBUFFLEN PKTLEN*50
 
-char pktBuff[PKTBUFFLEN] = "";
-int pktBuffPos = 0;
+/*char pktBuff[PKTBUFFLEN] = "";
+int pktBuffPos = 0;*/
 
 void print_beacon(beaconinfo beacon)
 {
   if (beacon.err != 0) {
     //Serial.printf("BEACON ERR: (%d)  ", beacon.err);
   } else {
-    /*Serial.print("BC ");
+    Serial.print("BC ");
     for (int i = 0; i < 6; i++) Serial.printf("%02x", beacon.bssid[i]);
     Serial.printf(" [%32s] ", beacon.ssid);
     Serial.printf(" %2d", beacon.channel);
     Serial.printf(" %4d", beacon.rssi);
-    Serial.println();*/
-
-    //char pktBuff[256] = "";
-    //sprintf(pktBuff, "BC %02x%02x%02x%02x%02x%02x [%32s] %2d %4d\n", beacon.bssid[0], beacon.bssid[1], beacon.bssid[2], beacon.bssid[3], beacon.bssid[4], beacon.bssid[5], beacon.ssid, beacon.channel, beacon.rssi);
-    //Udp.beginPacket(ip, 1234);
-    //Udp.write(pktBuff);
-    //Udp.endPacket();
+    Serial.println();
   }
 }
 
@@ -50,14 +44,14 @@ void print_client(clientinfo ci)
   if (ci.err != 0) {
     // nothing
   } else {
-    /*Serial.printf("DI ");
+    Serial.printf("DI ");
     for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.station[i]);
     Serial.print(" ");
     for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.bssid[i]);
     Serial.print(" ");
     for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.ap[i]);
-    Serial.printf(" %4d\r\n", ci.rssi);*/
-
+    Serial.printf(" %4d\r\n", ci.rssi);
+/*
     if (pktBuffPos >= PKTBUFFLEN - 48) {
       Serial.println("overflow");
       //Serial.println(pktBuff);
@@ -74,9 +68,7 @@ void print_client(clientinfo ci)
     pktBuffPos += sprintf(pktBuff+pktBuffPos, " %4d\r\n", ci.rssi);
     //Serial.print(pktBuff);
     //Serial.println("Position: "+String(pktBuffPos));
-    /*Udp.beginPacket(ip, 1234);
-    Udp.write(pktBuff);
-    Udp.endPacket();*/
+    */
   }
 }
 
