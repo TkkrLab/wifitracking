@@ -1,17 +1,35 @@
+/* 
+ *  ESP8266 firmware for ShittyTraffic PoC
+ *  An ESP8266 based Wifi catcher
+ *  By Renze Nicolai and Florian Overkamp
+ */
+
+// WiFi Access Point for pushing the data out
+//
+#define WLAN_SSID       "<SSID>"
+#define WLAN_PASS       "<PASSWD>"
+
+// Server connection to push data out
+//
+#define WTR_API         "<URL>"
+
+
+// No user serviceable parts below
+
 #include <ESP8266WiFi.h>
 #ifdef USE_UDP
 #include <WiFiUdp.h>
 WiFiUDP Udp;
-IPAddress ip(10, 42, 8, 89);
+IPAddress ip(172, 22, 16, 4);
 int port = 1234;
 #else
 #include <WiFiClient.h>
 WiFiClient client;
-const char* host = "10.42.8.89";
+const char* host = "172.22.16.4";
 const uint16_t port = 8090;
 #endif
 
-
+unsigned int channel = 1;
 
 extern "C" {
 #include "user_interface.h"
@@ -96,6 +114,9 @@ struct sniffer_buf2 {
   uint16_t len;
 };
 
+//
+// Called from the promiscuous callback when a client packet is received
+//
 struct clientinfo parse_data(uint8_t *frame, uint16_t framelen, signed rssi, unsigned channel)
 {
   struct clientinfo ci;
@@ -150,6 +171,9 @@ struct clientinfo parse_data(uint8_t *frame, uint16_t framelen, signed rssi, uns
   return ci;
 }
 
+//
+// Called from the promiscuous callback when a beacon (AP) packet is received
+//
 struct beaconinfo parse_beacon(uint8_t *frame, uint16_t framelen, signed rssi)
 {
   struct beaconinfo bi;
@@ -206,6 +230,10 @@ struct beaconinfo parse_beacon(uint8_t *frame, uint16_t framelen, signed rssi)
 char pktBuff[PKTBUFFLEN] = "";
 int pktBuffPos = 0;
 
+
+//
+// Called from the promiscuous callback when a beacon (AP) packet is received and parsed
+//
 void print_beacon(beaconinfo beacon)
 {
   /*if (beacon.err != 0) return;
@@ -217,17 +245,20 @@ void print_beacon(beaconinfo beacon)
   Serial.println();*/
 }
 
+//
+// Called from the promiscuous callback when a client packet is received and parsed
+//
 void print_client(clientinfo ci)
 {
   if (ci.err != 0) return;
   
-  /*Serial.printf("DI ");
+  Serial.printf("DI ");
   for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.station[i]);
   Serial.print(" ");
   for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.bssid[i]);
   Serial.print(" ");
   for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.ap[i]);
-  Serial.printf(" %4d\r\n", ci.rssi);*/
+  Serial.printf(" %4d\r\n", ci.rssi);
   if (pktBuffPos >= PKTBUFFLEN - PKTLEN) {
     Serial.println("Buffer full!");
     return;
@@ -245,6 +276,9 @@ void print_client(clientinfo ci)
   //Serial.print(ptr);
 }
 
+//
+// Callback when in promiscuous mode will analyse packets and act accordingly
+//
 void promisc_cb(uint8_t *buf, uint16_t len)
 {
   int i = 0;
@@ -267,24 +301,15 @@ void promisc_cb(uint8_t *buf, uint16_t len)
   }
 }
 
-unsigned int channel = 1;
-
-void setup() {
-  WiFi.persistent(false);
-  Serial.begin(115200);
-  wifi_set_opmode(STATION_MODE);            // Promiscuous works only with station mode
-  wifi_set_channel(channel);
-  wifi_promiscuous_enable(0);
-  wifi_set_promiscuous_rx_cb(promisc_cb);   // Set up promiscuous callback
-  wifi_promiscuous_enable(1);
-}
-
+//
+// When sending off data, connect as a regular client to a trusted Wifi network
+//
 bool clientConnect() {
   if (WiFi.status() == WL_CONNECTED) return true;
   struct station_config conf;
   conf.threshold.authmode = AUTH_WPA_PSK;
-  strcpy(reinterpret_cast<char*>(conf.ssid), "<YOUR SSID>");
-  strcpy(reinterpret_cast<char*>(conf.password), "<YOUR PASSWORD>");
+  strcpy(reinterpret_cast<char*>(conf.ssid), WLAN_SSID);
+  strcpy(reinterpret_cast<char*>(conf.password), WLAN_PASS);
   conf.threshold.rssi = -127;
   //conf.open_and_wep_mode_disable = true;
   conf.bssid_set = 0;
@@ -301,6 +326,9 @@ bool clientConnect() {
   return true;
 }
 
+//
+// When buffer is full, send the buffer
+//
 void transmitPacket() {
   if (pktBuffPos < 1) return;
   wifi_promiscuous_enable(0);
@@ -342,11 +370,33 @@ void transmitPacket() {
   wifi_promiscuous_enable(1);
 }
 
-void loop() {
-  if (channel == 15) { channel = 1; }
-  Serial.println("Switching to channel "+String(channel)+", "+String(pktBuffPos/PKTLEN)+" of "+String(PKTBUFFLEN/PKTLEN)+" entries in buffer.");
-  if (pktBuffPos > PKTBUFFSEND) transmitPacket();
+//
+// Main setup function
+//
+void setup() {
+  Serial.begin(115200);
+
+  WiFi.persistent(false);
+  wifi_set_opmode(STATION_MODE);            // Promiscuous works only with station mode
   wifi_set_channel(channel);
+  wifi_promiscuous_enable(0);
+  wifi_set_promiscuous_rx_cb(promisc_cb);   // Set up promiscuous callback
+  wifi_promiscuous_enable(1);
+}
+
+//
+// Main loop
+//
+void loop() {
+
+  // First, check if buffer is full, if so, send it out
+  if (pktBuffPos > PKTBUFFSEND) transmitPacket();
+
+  // Iterate through Wifi channels (2.4Ghz only)
+  if (channel == 15) { channel = 1; }
+  Serial.println("Switching to channel "+String(channel)+", "+String(pktBuffPos/PKTLEN)+" of "+String(PKTBUFFLEN/PKTLEN)+" entries in buffer.");  
+  wifi_set_channel(channel);
+  // Just wait for two seconds (we're in promiscuous mode, so traffic will be handled in callback)
   delay(2000);
   channel++;
 }
