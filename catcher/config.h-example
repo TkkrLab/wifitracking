@@ -1,0 +1,9 @@
+// WiFi Access Point for pushing the data out
+//
+#define WLAN_SSID       "<SSID>"
+#define WLAN_PASS       "<PASSWD>"
+
+// Server connection to push data out
+//
+#define WTR_API         "<URL>"
+
