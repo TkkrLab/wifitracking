@@ -3,32 +3,24 @@
  *  An ESP8266 based Wifi catcher
  *  By Renze Nicolai and Florian Overkamp
  */
-
-// WiFi Access Point for pushing the data out
+ 
 //
-#define WLAN_SSID       "<SSID>"
-#define WLAN_PASS       "<PASSWD>"
-
-// Server connection to push data out
+// Configuration settings
 //
-#define WTR_API         "<URL>"
+#include "config.h"
 
-
+//
 // No user serviceable parts below
+//
 
+// Libraries
 #include <ESP8266WiFi.h>
-#ifdef USE_UDP
-#include <WiFiUdp.h>
-WiFiUDP Udp;
-IPAddress ip(172, 22, 16, 4);
-int port = 1234;
-#else
 #include <WiFiClient.h>
-WiFiClient client;
-const char* host = "172.22.16.4";
-const uint16_t port = 8090;
-#endif
+#include <ArduinoJson.h>
 
+// Global vars
+WiFiClient client;
+char nodename[80] = "UNDEF";
 unsigned int channel = 1;
 
 extern "C" {
@@ -341,28 +333,21 @@ void transmitPacket() {
 
   if (clientConnect()) {
     Serial.println("Connecting was succesfull!");
-    #ifdef USE_UDP
-      Udp.beginPacket(ip, port);
-      Udp.write(pktBuff, pktBuffPos);
-      Udp.endPacket();
-    #else
-      if (!client.connect(host, port)) {
-        Serial.println("connection failed");
-      } else {
-        int currPos = 0;
-        int timeout = 10;
-        while (currPos < pktBuffPos) {
-          int tx = client.write(pktBuff+currPos, pktBuffPos);
-          currPos += tx;
-          Serial.println("tx = "+String(tx)+" ("+String(currPos)+"/"+String(pktBuffPos)+")");
-          if (tx < 1) timeout -= 1;
-          if (timeout < 0) {Serial.println("TIMEOUT DURING TX"); break; }
-        }
-        
-        client.stop();
+//      if (!client.connect(host, port)) {
+//        Serial.println("connection failed");
+//      } else {
+//        int currPos = 0;
+//        int timeout = 10;
+//        while (currPos < pktBuffPos) {
+//          int tx = client.write(pktBuff+currPos, pktBuffPos);
+//          currPos += tx;
+//          Serial.println("tx = "+String(tx)+" ("+String(currPos)+"/"+String(pktBuffPos)+")");
+//          if (tx < 1) timeout -= 1;
+//          if (timeout < 0) {Serial.println("TIMEOUT DURING TX"); break; }
+//        }      
+//        client.stop();
         pktBuffPos = 0;
-      }
-    #endif
+//      }
     delay(500);
   }
 
@@ -376,6 +361,22 @@ void transmitPacket() {
 void setup() {
   Serial.begin(115200);
 
+  // Grab our own MAC as the basis for our node identifier
+  Serial.println(WiFi.macAddress());
+  byte mac[6];
+  WiFi.macAddress(mac);
+  // Copy them in to a readable char[];
+  sprintf(nodename, "%02x", mac[0]);
+  sprintf(nodename+2, "%02x", mac[1]);
+  sprintf(nodename+4, "%02x", mac[2]);
+  sprintf(nodename+6, "%02x", mac[3]);
+  sprintf(nodename+8, "%02x", mac[4]);
+  sprintf(nodename+10, "%02x", mac[5]);
+  Serial.print("Node ");
+  Serial.print(nodename);
+  Serial.println(" starting up.");
+
+  // Prepare to set promisc
   WiFi.persistent(false);
   wifi_set_opmode(STATION_MODE);            // Promiscuous works only with station mode
   wifi_set_channel(channel);
