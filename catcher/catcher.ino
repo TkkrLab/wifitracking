@@ -15,11 +15,12 @@
 
 // Libraries
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecureBearSSL.h>
 #include <ArduinoJson.h>
 
 // Global vars
-WiFiClient client;
+WiFiClientSecure wificlient;
 char nodename[80] = "UNDEF";
 unsigned int channel = 1;
 
@@ -333,19 +334,50 @@ void transmitPacket() {
 
   if (clientConnect()) {
     Serial.println("Connecting was succesfull!");
-//      if (!client.connect(host, port)) {
+
+    std::unique_ptr<BearSSL::WiFiClientSecure>client(new BearSSL::WiFiClientSecure);
+    //client->setFingerprint(WTR_SHA1); @@FIXME@@ enable these checks prevent MITM
+
+    HTTPClient https;
+    if (https.begin(*client, String(WTR_API))) {
+      Serial.println("HTTPS connection succeeded, ready to POST");
+      
+      String jsonPayload = "{}"; // passed into this function  
+      
+      https.addHeader("Content-Type", "application/json");
+
+      int httpCode = https.POST(jsonPayload);
+
+      if(httpCode > 0) {
+        Serial.printf("[HTTP] POST... code: %d\n", httpCode);
+        if(httpCode == HTTP_CODE_OK) {
+          String payload = https.getString();
+          Serial.println(payload);
+        }
+      } 
+      
+      https.end();
+    } else {
+      Serial.println("HTTPS connection failed");
+    }
+    
+
+// See https://github.com/esp8266/Arduino/blob/master/libraries/ESP8266WiFi/examples/HTTPSRequest/HTTPSRequest.ino
+// https://lekum.org/post/arduino_slack_button/
+
+//      if (!wificlient.connect(host, port)) {
 //        Serial.println("connection failed");
 //      } else {
 //        int currPos = 0;
 //        int timeout = 10;
 //        while (currPos < pktBuffPos) {
-//          int tx = client.write(pktBuff+currPos, pktBuffPos);
+//          int tx = wificlient.write(pktBuff+currPos, pktBuffPos);
 //          currPos += tx;
 //          Serial.println("tx = "+String(tx)+" ("+String(currPos)+"/"+String(pktBuffPos)+")");
 //          if (tx < 1) timeout -= 1;
 //          if (timeout < 0) {Serial.println("TIMEOUT DURING TX"); break; }
 //        }      
-//        client.stop();
+//        wificlient.stop();
         pktBuffPos = 0;
 //      }
     delay(500);
@@ -360,9 +392,10 @@ void transmitPacket() {
 //
 void setup() {
   Serial.begin(115200);
+  Serial.println();
+  Serial.println();
 
   // Grab our own MAC as the basis for our node identifier
-  Serial.println(WiFi.macAddress());
   byte mac[6];
   WiFi.macAddress(mac);
   // Copy them in to a readable char[];
