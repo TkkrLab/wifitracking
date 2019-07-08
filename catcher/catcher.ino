@@ -15,9 +15,7 @@
 
 // Libraries
 #include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
-#include <WiFiClientSecureBearSSL.h>
-#include <ArduinoJson.h>
+#include <WiFiClientSecure.h>
 
 // Global vars
 WiFiClientSecure wificlient;
@@ -217,7 +215,7 @@ struct beaconinfo parse_beacon(uint8_t *frame, uint16_t framelen, signed rssi)
   return bi;
 }
 
-#define PKTLEN 12
+#define PKTLEN 12+1
 #define PKTBUFFLEN PKTLEN*85*4
 #define PKTBUFFSEND PKTLEN*85*3
 char pktBuff[PKTBUFFLEN] = "";
@@ -260,6 +258,7 @@ void print_client(clientinfo ci)
   char* ptr = pktBuff + pktBuffPos;
   //pktBuffPos += sprintf(pktBuff+pktBuffPos, "DI ");
   for (int i = 0; i < 6; i++) pktBuffPos += sprintf(pktBuff+pktBuffPos, "%02x", ci.station[i]);
+  pktBuffPos += sprintf(pktBuff+pktBuffPos, ","); // Data separator
   //pktBuffPos += sprintf(pktBuff+pktBuffPos, " ");
   //for (int i = 0; i < 6; i++) pktBuffPos += sprintf(pktBuff+pktBuffPos, "%02x", ci.bssid[i]);
   //pktBuffPos += sprintf(pktBuff+pktBuffPos, " ");
@@ -333,37 +332,52 @@ void transmitPacket() {
   }
 
   if (clientConnect()) {
-    Serial.println("Connecting was succesfull!");
+    Serial.println("AP connection up");
 
-    std::unique_ptr<BearSSL::WiFiClientSecure>client(new BearSSL::WiFiClientSecure);
-    //client->setFingerprint(WTR_SHA1); @@FIXME@@ enable these checks prevent MITM
+    wificlient.setFingerprint(WTR_SHA1);
+    wificlient.setTimeout(15000); // 15 Seconds
 
-    HTTPClient https;
-    if (https.begin(*client, String(WTR_API))) {
-      Serial.println("HTTPS connection succeeded, ready to POST");
-      
-      String jsonPayload = "{}"; // passed into this function  
-      
-      https.addHeader("Content-Type", "application/json");
-
-      int httpCode = https.POST(jsonPayload);
-
-      if(httpCode > 0) {
-        Serial.printf("[HTTP] POST... code: %d\n", httpCode);
-        if(httpCode == HTTP_CODE_OK) {
-          String payload = https.getString();
-          Serial.println(payload);
-        }
-      } 
-      
-      https.end();
-    } else {
+    // 'Native' in WiFiClient because we need to push the entire clientbuffer in the API
+    // As a result copying the buffer in to a new String for HTTPClient library use is highly inefficient
+    if (!wificlient.connect(WTR_SERVER, WTR_SRVPORT)) {
       Serial.println("HTTPS connection failed");
-    }
-    
+    } else {
+      Serial.println("HTTPS connection up");
 
-// See https://github.com/esp8266/Arduino/blob/master/libraries/ESP8266WiFi/examples/HTTPSRequest/HTTPSRequest.ino
-// https://lekum.org/post/arduino_slack_button/
+      // Send request to the server:
+      wificlient.println("POST " WTR_URI " HTTP/1.1");
+      wificlient.println("Host: " WTR_SERVER);
+      wificlient.println("Accept: */*");
+      wificlient.println("Content-Type: application/json");
+      wificlient.print("Content-Length: ");
+      wificlient.println(37+PKTBUFFLEN-1);    // 37 chars plus buffer length minus the last ',' char we will strip in a bit
+      //wificlient.println("Connection: close");
+      wificlient.println();
+      // Construct the REST/JSON POST data
+      wificlient.print("{\"node\":\"");
+      wificlient.print(nodename);
+      wificlient.print("\",\"clients\":\"");
+      pktBuff[PKTBUFFLEN-2] = '\0';           // As in right here we will drop the final ','
+      wificlient.print(pktBuff);
+      wificlient.println("\"}");
+      Serial.println("POST sent");
+      
+      while (wificlient.connected()) {
+        String line = wificlient.readStringUntil('\n');
+        if (line == "\r") {
+          Serial.println("Headers received");
+          break;
+        }
+      }
+      String line = wificlient.readStringUntil('\n');
+      Serial.println("reply was:");
+      Serial.println("==========");
+      Serial.println(line);
+      Serial.println("==========");
+      Serial.println("closing connection");
+      wificlient.stop();  // DISCONNECT FROM THE SERVER
+    }
+
 
 //      if (!wificlient.connect(host, port)) {
 //        Serial.println("connection failed");
