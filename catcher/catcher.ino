@@ -10,7 +10,7 @@
 #include "config.h"
 
 //
-// Hash algorithms
+// Hash algorithms from ESP8266-SHA-256, see https://github.com/CSSHL/ESP8266-Arduino-cryptolibs
 //
 #include <sha256.h>
 
@@ -21,24 +21,21 @@
 // Libraries
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
+#include "SimpleMap.h"       // https://github.com/spacehuhn/SimpleMap
 
 // Global vars
 WiFiClientSecure wificlient;
 char nodename[80] = "UNDEF";
 unsigned int channel = 1;
 
-#define PKTLEN 64+1               // with a regular MAC this is 12
-#define PKTBUFFLEN PKTLEN*16*4    // leaving room for 85 instead of 16
-#define PKTBUFFSEND PKTLEN*16*3
-char pktBuff[PKTBUFFLEN] = "";
-int pktBuffPos = 0;
-
+// Max number of hashes to wait for before we start to send out
 #define HASHCOUNT 32
-struct hash {
-  char sha256[65];        // null terminated buffer
-};
-struct hash hashbuffer[HASHCOUNT];
-int hashpos = 0;
+// Create a SimpleMap for the SHA256 hashes
+SimpleMap<String, String> *hashmap = new SimpleMap<String, String>([](String &a, String &b) -> int {
+  if (a == b) return 0;      // a and b are equal
+  else if (a > b) return 1;  // a is bigger than b
+  else return -1;            // a is smaller than b
+});
 
 extern "C" {
 #include "user_interface.h"
@@ -127,36 +124,34 @@ struct sniffer_buf2 {
 // Called from the promiscuous callback/print routine when a client packet is received
 //
 void save_mac(char* mac) {
-  Serial.print("Saving client MAC ");
-  Serial.print(mac);
 
-  BYTE hash[SHA256_BLOCK_SIZE];
-  char texthash[2*SHA256_BLOCK_SIZE+1];
-  Sha256* sha256Instance=new Sha256();
-  
-  BYTE text[12];
-  for (int i = 0; i < 12; i++) text[i] = mac[i];
-  sha256Instance->update(text, strlen((const char*)text));
-  sha256Instance->final(hash);
-
-  // Copy the hash in the packet buffer
-  for(int i=0; i<SHA256_BLOCK_SIZE; ++i)
-    sprintf(texthash+2*i, "%02X", hash[i]);
-    
-  Serial.print(" as SHA256 hash ");
-
-  // Store hash and increase counter, if there is room
-  if(hashpos < HASHCOUNT) {
-    strncpy(hashbuffer[hashpos].sha256, texthash, 2*SHA256_BLOCK_SIZE);
-    Serial.println(hashbuffer[hashpos].sha256);
-    hashpos++;
+  if(hashmap->has(mac)) {
+    //Serial.print(".");
   } else {
-    Serial.print(texthash);
-    Serial.print(" dropped because buffer is full; hashpos = ");
-    Serial.println(hashpos);
-  }
+    Serial.print("MAC ");
+    Serial.print(mac);
+
+    BYTE hash[SHA256_BLOCK_SIZE];
+    char texthash[2*SHA256_BLOCK_SIZE+1];
+    Sha256* sha256Instance=new Sha256();
   
-  delete sha256Instance;
+    BYTE text[12];
+    for (int i = 0; i < 12; i++) text[i] = mac[i];
+    sha256Instance->update(text, strlen((const char*)text));
+    sha256Instance->final(hash);
+
+    // Copy the hash in the packet buffer
+    for(int i=0; i<SHA256_BLOCK_SIZE; ++i)
+      sprintf(texthash+2*i, "%02X", hash[i]);
+    
+    hashmap->put(mac, texthash);
+    Serial.print(" is SHA256 hash ");
+    Serial.print(texthash);
+    Serial.print(" at map entry ");
+    Serial.println(hashmap->size());  
+  
+    delete sha256Instance;     
+  }
 }
 
 //
@@ -303,21 +298,6 @@ void print_client(clientinfo ci)
   char clientmac[12] = "";
   sprintf(clientmac, "%02x%02x%02x%02x%02x%02x", ci.station[0], ci.station[1], ci.station[2], ci.station[3], ci.station[4], ci.station[5]);
   save_mac(clientmac);
-//  if (pktBuffPos >= PKTBUFFLEN - PKTLEN) {
-//    Serial.println("Buffer full!");
-//    return;
-//  }
-//  char* ptr = pktBuff + pktBuffPos;
-  //pktBuffPos += sprintf(pktBuff+pktBuffPos, "DI ");
-//  for (int i = 0; i < 6; i++) pktBuffPos += sprintf(pktBuff+pktBuffPos, "%02x", ci.station[i]);
-//  pktBuffPos += sprintf(pktBuff+pktBuffPos, ","); // Data separator
-  //pktBuffPos += sprintf(pktBuff+pktBuffPos, " ");
-  //for (int i = 0; i < 6; i++) pktBuffPos += sprintf(pktBuff+pktBuffPos, "%02x", ci.bssid[i]);
-  //pktBuffPos += sprintf(pktBuff+pktBuffPos, " ");
-  //for (int i = 0; i < 6; i++) pktBuffPos += sprintf(pktBuff+pktBuffPos, "%02x", ci.ap[i]);
-  //pktBuffPos += sprintf(pktBuff+pktBuffPos, "%03d\n", abs(ci.rssi));
-
-  //Serial.print(ptr);
 }
 
 //
@@ -374,7 +354,7 @@ bool clientConnect() {
 // When buffer is full, send the buffer
 //
 void transmitPacket() {
-  //if (pktBuffPos < 1) return;
+  if (hashmap->size() < 1) return;
   wifi_promiscuous_enable(0);
   delay(100);
   bool enabled = WiFi.enableSTA(true);
@@ -402,8 +382,7 @@ void transmitPacket() {
       wificlient.println("Accept: */*");
       wificlient.println("Content-Type: application/json");
       wificlient.print("Content-Length: ");
-      wificlient.println(37+sizeof(hashbuffer)-1);    // 37 chars plus buffer length minus the last ',' char we will strip in a bit
-      Serial.println(sizeof(hashbuffer));
+      wificlient.println(37+(hashmap->size()*65)-1);    // 37 chars plus map size minus the last ',' char we will strip in a bit
       //wificlient.println("Connection: close");
       wificlient.println();
       // Construct the REST/JSON POST data
@@ -411,14 +390,12 @@ void transmitPacket() {
       wificlient.print(nodename);
       wificlient.print("\",\"clients\":\"");
       // Loop through hashbuffer @@@FIXME@@@
-      for(int i=0; i<HASHCOUNT; ++i) {
-        wificlient.print(hashbuffer[i].sha256);
-        wificlient.print(",");
+      for(int i=0; i<hashmap->size(); ++i) {
+        wificlient.print(hashmap->getData(i));
+        if(i < hashmap->size()-1) wificlient.print(",");
       }
       // No sanity, assume buffer can be discarded here
-      hashpos = 0;
-//      pktBuff[PKTBUFFLEN-2] = '\0';           // As in right here we will drop the final ','
-//      wificlient.print(pktBuff);
+      hashmap->clear();
       wificlient.println("\"}");
       Serial.println("POST sent");
       
@@ -437,24 +414,7 @@ void transmitPacket() {
       Serial.println("closing connection");
       wificlient.stop();  // DISCONNECT FROM THE SERVER
     }
-
-
-//      if (!wificlient.connect(host, port)) {
-//        Serial.println("connection failed");
-//      } else {
-//        int currPos = 0;
-//        int timeout = 10;
-//        while (currPos < pktBuffPos) {
-//          int tx = wificlient.write(pktBuff+currPos, pktBuffPos);
-//          currPos += tx;
-//          Serial.println("tx = "+String(tx)+" ("+String(currPos)+"/"+String(pktBuffPos)+")");
-//          if (tx < 1) timeout -= 1;
-//          if (timeout < 0) {Serial.println("TIMEOUT DURING TX"); break; }
-//        }      
-//        wificlient.stop();
-        pktBuffPos = 0;
-//      }
-    delay(500);
+    delay(500);  // Not sure if needed @@@FIXME@@@
   }
 
   wifi_station_disconnect();
@@ -498,11 +458,11 @@ void setup() {
 void loop() {
 
   // First, check if buffer is full, if so, send it out
-  if(hashpos >= HASHCOUNT-1) transmitPacket();
+  if((hashmap->size() > HASHCOUNT) || (channel == 15)) transmitPacket();
 
   // Iterate through Wifi channels (2.4Ghz only)
   if (channel == 15) { channel = 1; }
-  Serial.println("Switching to channel "+String(channel)+", "+String(hashpos+1)+" of "+String(HASHCOUNT)+" entries in buffer.");  
+  Serial.println("Switching to channel "+String(channel)+", "+String(hashmap->size())+" entries in buffer.");  
   wifi_set_channel(channel);
   // Just wait for two seconds (we're in promiscuous mode, so traffic will be handled in callback)
   delay(2000);
