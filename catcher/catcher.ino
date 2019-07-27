@@ -10,6 +10,11 @@
 #include "config.h"
 
 //
+// Hash algorithms
+//
+#include <sha256.h>
+
+//
 // No user serviceable parts below
 //
 
@@ -21,6 +26,19 @@
 WiFiClientSecure wificlient;
 char nodename[80] = "UNDEF";
 unsigned int channel = 1;
+
+#define PKTLEN 64+1               // with a regular MAC this is 12
+#define PKTBUFFLEN PKTLEN*16*4    // leaving room for 85 instead of 16
+#define PKTBUFFSEND PKTLEN*16*3
+char pktBuff[PKTBUFFLEN] = "";
+int pktBuffPos = 0;
+
+#define HASHCOUNT 32
+struct hash {
+  char sha256[65];        // null terminated buffer
+};
+struct hash hashbuffer[HASHCOUNT];
+int hashpos = 0;
 
 extern "C" {
 #include "user_interface.h"
@@ -104,6 +122,42 @@ struct sniffer_buf2 {
   uint16_t cnt;
   uint16_t len;
 };
+
+//
+// Called from the promiscuous callback/print routine when a client packet is received
+//
+void save_mac(char* mac) {
+  Serial.print("Saving client MAC ");
+  Serial.print(mac);
+
+  BYTE hash[SHA256_BLOCK_SIZE];
+  char texthash[2*SHA256_BLOCK_SIZE+1];
+  Sha256* sha256Instance=new Sha256();
+  
+  BYTE text[12];
+  for (int i = 0; i < 12; i++) text[i] = mac[i];
+  sha256Instance->update(text, strlen((const char*)text));
+  sha256Instance->final(hash);
+
+  // Copy the hash in the packet buffer
+  for(int i=0; i<SHA256_BLOCK_SIZE; ++i)
+    sprintf(texthash+2*i, "%02X", hash[i]);
+    
+  Serial.print(" as SHA256 hash ");
+
+  // Store hash and increase counter, if there is room
+  if(hashpos < HASHCOUNT) {
+    strncpy(hashbuffer[hashpos].sha256, texthash, 2*SHA256_BLOCK_SIZE);
+    Serial.println(hashbuffer[hashpos].sha256);
+    hashpos++;
+  } else {
+    Serial.print(texthash);
+    Serial.print(" dropped because buffer is full; hashpos = ");
+    Serial.println(hashpos);
+  }
+  
+  delete sha256Instance;
+}
 
 //
 // Called from the promiscuous callback when a client packet is received
@@ -215,13 +269,6 @@ struct beaconinfo parse_beacon(uint8_t *frame, uint16_t framelen, signed rssi)
   return bi;
 }
 
-#define PKTLEN 12+1
-#define PKTBUFFLEN PKTLEN*85*4
-#define PKTBUFFSEND PKTLEN*85*3
-char pktBuff[PKTBUFFLEN] = "";
-int pktBuffPos = 0;
-
-
 //
 // Called from the promiscuous callback when a beacon (AP) packet is received and parsed
 //
@@ -243,22 +290,27 @@ void print_client(clientinfo ci)
 {
   if (ci.err != 0) return;
   
-  Serial.printf("DI ");
+  /* Serial.printf("DI ");
   for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.station[i]);
   Serial.print(" ");
   for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.bssid[i]);
   Serial.print(" ");
   for (int i = 0; i < 6; i++) Serial.printf("%02x", ci.ap[i]);
-  Serial.printf(" %4d\r\n", ci.rssi);
-  if (pktBuffPos >= PKTBUFFLEN - PKTLEN) {
-    Serial.println("Buffer full!");
-    return;
-  }
+  Serial.printf(" %4d\r\n", ci.rssi); */
 
-  char* ptr = pktBuff + pktBuffPos;
+  // Save the MAC
+  //
+  char clientmac[12] = "";
+  sprintf(clientmac, "%02x%02x%02x%02x%02x%02x", ci.station[0], ci.station[1], ci.station[2], ci.station[3], ci.station[4], ci.station[5]);
+  save_mac(clientmac);
+//  if (pktBuffPos >= PKTBUFFLEN - PKTLEN) {
+//    Serial.println("Buffer full!");
+//    return;
+//  }
+//  char* ptr = pktBuff + pktBuffPos;
   //pktBuffPos += sprintf(pktBuff+pktBuffPos, "DI ");
-  for (int i = 0; i < 6; i++) pktBuffPos += sprintf(pktBuff+pktBuffPos, "%02x", ci.station[i]);
-  pktBuffPos += sprintf(pktBuff+pktBuffPos, ","); // Data separator
+//  for (int i = 0; i < 6; i++) pktBuffPos += sprintf(pktBuff+pktBuffPos, "%02x", ci.station[i]);
+//  pktBuffPos += sprintf(pktBuff+pktBuffPos, ","); // Data separator
   //pktBuffPos += sprintf(pktBuff+pktBuffPos, " ");
   //for (int i = 0; i < 6; i++) pktBuffPos += sprintf(pktBuff+pktBuffPos, "%02x", ci.bssid[i]);
   //pktBuffPos += sprintf(pktBuff+pktBuffPos, " ");
@@ -322,7 +374,7 @@ bool clientConnect() {
 // When buffer is full, send the buffer
 //
 void transmitPacket() {
-  if (pktBuffPos < 1) return;
+  //if (pktBuffPos < 1) return;
   wifi_promiscuous_enable(0);
   delay(100);
   bool enabled = WiFi.enableSTA(true);
@@ -350,15 +402,23 @@ void transmitPacket() {
       wificlient.println("Accept: */*");
       wificlient.println("Content-Type: application/json");
       wificlient.print("Content-Length: ");
-      wificlient.println(37+PKTBUFFLEN-1);    // 37 chars plus buffer length minus the last ',' char we will strip in a bit
+      wificlient.println(37+sizeof(hashbuffer)-1);    // 37 chars plus buffer length minus the last ',' char we will strip in a bit
+      Serial.println(sizeof(hashbuffer));
       //wificlient.println("Connection: close");
       wificlient.println();
       // Construct the REST/JSON POST data
       wificlient.print("{\"node\":\"");
       wificlient.print(nodename);
       wificlient.print("\",\"clients\":\"");
-      pktBuff[PKTBUFFLEN-2] = '\0';           // As in right here we will drop the final ','
-      wificlient.print(pktBuff);
+      // Loop through hashbuffer @@@FIXME@@@
+      for(int i=0; i<HASHCOUNT; ++i) {
+        wificlient.print(hashbuffer[i].sha256);
+        wificlient.print(",");
+      }
+      // No sanity, assume buffer can be discarded here
+      hashpos = 0;
+//      pktBuff[PKTBUFFLEN-2] = '\0';           // As in right here we will drop the final ','
+//      wificlient.print(pktBuff);
       wificlient.println("\"}");
       Serial.println("POST sent");
       
@@ -438,11 +498,11 @@ void setup() {
 void loop() {
 
   // First, check if buffer is full, if so, send it out
-  if (pktBuffPos > PKTBUFFSEND) transmitPacket();
+  if(hashpos >= HASHCOUNT-1) transmitPacket();
 
   // Iterate through Wifi channels (2.4Ghz only)
   if (channel == 15) { channel = 1; }
-  Serial.println("Switching to channel "+String(channel)+", "+String(pktBuffPos/PKTLEN)+" of "+String(PKTBUFFLEN/PKTLEN)+" entries in buffer.");  
+  Serial.println("Switching to channel "+String(channel)+", "+String(hashpos+1)+" of "+String(HASHCOUNT)+" entries in buffer.");  
   wifi_set_channel(channel);
   // Just wait for two seconds (we're in promiscuous mode, so traffic will be handled in callback)
   delay(2000);
