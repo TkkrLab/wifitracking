@@ -15,6 +15,10 @@ include_once '../db.php';
  
 // get posted data
 $data = json_decode(file_get_contents("php://input"));
+
+// dump to file for troubleshooting (remove from production)
+$raw = var_export($data, true);
+file_put_contents ("/home/florian/apps/wtr/server/log/wtr.log", $raw, FILE_APPEND);
  
 // make sure data is not empty
 if(
@@ -32,25 +36,40 @@ if(
 		$lat = $result['lat'];
 		$lon = $result['lon'];
 	} else {
-		$nid = 0;
-		$lat = 0;
-		$lon = 0;
+		// A new node was found, lets create it
+		$sth = $pdo->prepare("INSERT INTO nodes (node) VALUES (?)");
+		$sth->execute(array($data->node));
+
+		// Now rerun that lookup so we find the nid
+		$sth = $pdo->prepare("SELECT * FROM nodes WHERE node=?");
+		$sth->execute(array($data->node));
+		if($sth->rowCount() == 1) {
+			$result = $sth->fetch(PDO::FETCH_ASSOC);
+			$nid = $result['nid'];
+			$lat = $result['lat'];
+			$lon = $result['lon'];
+		} else {
+			// If this failed there is something wrong, but lets try and proceed as sanely as possible
+			$nid = 0;
+			$lat = 0;
+			$lon = 0;
+		}
 	}
 
 	// create or update client log for each client entry
 	$clients = explode(",", $data->clients);
 	foreach ($clients as $client) {
-		echo $client;
+		// Inbound data has been pseudononimised. Now we need to anonimise it further
+		// We will work with the first 17 bytes of the 64 byte SHA hash
+		$client = substr($client, 0, 17);
 		$sth = $pdo->prepare("SELECT * FROM sessions WHERE client=? AND nid=? AND (UNIX_TIMESTAMP()-UNIX_TIMESTAMP(stop) < ?)");
 		$sth->execute(array($client, $nid, EXPIRETIME));
 		if($sth->rowCount() == 0) {
 			// No active session was found, start a new session
-			echo " start new";
 			$sth = $pdo->prepare("INSERT INTO sessions (client, nid, lat, lon) VALUES (?, ?, ?, ?)");
 			$sth->execute(array($client, $nid, $lat, $lon));
 		} else {
 			// An active session was found, update it
-			echo " kept alive";
 			$result = $sth->fetch(PDO::FETCH_ASSOC);
 			$sth = $pdo->prepare("UPDATE sessions SET stop=UNIX_TIMESTAMP('0000-00-00 00:00:00.000000') WHERE cid=?");
 			$sth->execute(array($result["cid"]));
