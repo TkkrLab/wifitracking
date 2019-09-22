@@ -22,8 +22,10 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 #include "SimpleMap.h"       // https://github.com/spacehuhn/SimpleMap
+#include <WiFiManager.h>
 
 // Global vars
+WiFiManager wifiManager;
 WiFiClientSecure wificlient;
 char nodename[80] = "UNDEF";
 unsigned int channel = 1;
@@ -326,10 +328,18 @@ void promisc_cb(uint8_t *buf, uint16_t len)
 }
 
 //
+// If the WifiManager configuration portal is called, we clean the cache
+//
+void configModeCallback (WiFiManager *myWiFiManager) {
+  Serial.println("Entered config mode, clearing current hash buffer");
+  hashmap->clear();
+}
+
+//
 // When sending off data, connect as a regular client to a trusted Wifi network
 //
 bool clientConnect() {
-  if (WiFi.status() == WL_CONNECTED) return true;
+/*  if (WiFi.status() == WL_CONNECTED) return true;
   struct station_config conf;
   conf.threshold.authmode = AUTH_WPA_PSK;
   strcpy(reinterpret_cast<char*>(conf.ssid), WLAN_SSID);
@@ -346,7 +356,8 @@ bool clientConnect() {
     delay(1000);
     timeout -= 1;
     if (timeout < 0) return false;
-  }
+  } */
+  wifiManager.autoConnect(nodename);
   return true;
 }
 
@@ -382,7 +393,7 @@ void transmitPacket() {
       wificlient.println("Accept: */*");
       wificlient.println("Content-Type: application/json");
       wificlient.print("Content-Length: ");
-      wificlient.println(37+(hashmap->size()*65)-1);    // 37 chars plus map size minus the last ',' char we will strip in a bit
+      wificlient.println(40+(hashmap->size()*65)-1);    // 37 chars plus map size minus the last ',' char we will strip in a bit
       //wificlient.println("Connection: close");
       wificlient.println();
       // Construct the REST/JSON POST data
@@ -433,15 +444,19 @@ void setup() {
   byte mac[6];
   WiFi.macAddress(mac);
   // Copy them in to a readable char[];
-  sprintf(nodename, "%02x", mac[0]);
-  sprintf(nodename+2, "%02x", mac[1]);
-  sprintf(nodename+4, "%02x", mac[2]);
-  sprintf(nodename+6, "%02x", mac[3]);
-  sprintf(nodename+8, "%02x", mac[4]);
-  sprintf(nodename+10, "%02x", mac[5]);
+  sprintf(nodename, "WTR");
+  sprintf(nodename+3, "%02x", mac[0]);
+  sprintf(nodename+5, "%02x", mac[1]);
+  sprintf(nodename+7, "%02x", mac[2]);
+  sprintf(nodename+9, "%02x", mac[3]);
+  sprintf(nodename+11, "%02x", mac[4]);
+  sprintf(nodename+13, "%02x", mac[5]);
   Serial.print("Node ");
   Serial.print(nodename);
   Serial.println(" starting up.");
+
+  // Enable WifiManager callback to clear the cache
+  wifiManager.setAPCallback(configModeCallback);
 
   // Prepare to set promisc
   WiFi.persistent(false);
