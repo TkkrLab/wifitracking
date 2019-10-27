@@ -1,0 +1,24 @@
+#!/bin/bash
+
+if [ $# -gt "0" ]; then
+    MAC="$1"
+else
+    echo -n "MAC to hash: "
+    read -r
+    MAC="$REPLY"
+fi
+
+# To lowercase
+MAC=`echo -n $MAC | tr [A-Z] [a-z]`
+# Trim :
+MAC=`echo -n $MAC | tr -d :`
+
+# hash
+SHA256=`echo -n $MAC | sha256sum`
+# truncate
+TRUNK=${SHA256::17}
+# to uppercase
+TRUNK=`echo -n $TRUNK | tr [a-z] [A-Z]`
+
+echo $TRUNK
+
