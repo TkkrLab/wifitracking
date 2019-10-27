@@ -139,7 +139,7 @@ void save_mac(char* mac) {
   
     BYTE text[12];
     for (int i = 0; i < 12; i++) text[i] = mac[i];
-    sha256Instance->update(text, strlen((const char*)text));
+    sha256Instance->update(text, 12);
     sha256Instance->final(hash);
 
     // Copy the hash in the packet buffer
@@ -151,7 +151,7 @@ void save_mac(char* mac) {
     Serial.print(texthash);
     Serial.print(" at map entry ");
     Serial.println(hashmap->size());  
-  
+
     delete sha256Instance;     
   }
 }
@@ -377,7 +377,9 @@ void transmitPacket() {
   if (clientConnect()) {
     Serial.println("AP connection up");
 
-    wificlient.setFingerprint(WTR_SHA1);
+    //wificlient.setFingerprint(WTR_SHA1);
+    wificlient.setInsecure();    // Do not check fingerprint
+
     wificlient.setTimeout(15000); // 15 Seconds
 
     // 'Native' in WiFiClient because we need to push the entire clientbuffer in the API
