@@ -336,36 +336,9 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 }
 
 //
-// When sending off data, connect as a regular client to a trusted Wifi network
+// Connect to AP as client, check fw updates, upload hashbuffer
 //
-bool clientConnect() {
-/*  if (WiFi.status() == WL_CONNECTED) return true;
-  struct station_config conf;
-  conf.threshold.authmode = AUTH_WPA_PSK;
-  strcpy(reinterpret_cast<char*>(conf.ssid), WLAN_SSID);
-  strcpy(reinterpret_cast<char*>(conf.password), WLAN_PASS);
-  conf.threshold.rssi = -127;
-  //conf.open_and_wep_mode_disable = true;
-  conf.bssid_set = 0;
-  wifi_station_set_config_current(&conf);
-  wifi_station_connect();
-  wifi_station_dhcpc_start();
-  int timeout = 10;
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Connecting to WiFi network ("+String(timeout)+")... ");
-    delay(1000);
-    timeout -= 1;
-    if (timeout < 0) return false;
-  } */
-  wifiManager.autoConnect(nodename);
-  return true;
-}
-
-//
-// When buffer is full, send the buffer
-//
-void transmitPacket() {
-  if (hashmap->size() < 1) return;
+void pushout() {
   wifi_promiscuous_enable(0);
   delay(100);
   bool enabled = WiFi.enableSTA(true);
@@ -374,7 +347,7 @@ void transmitPacket() {
     return;
   }
 
-  if (clientConnect()) {
+  if (wifiManager.autoConnect(nodename)) {
     Serial.println("AP connection up");
 
     //wificlient.setFingerprint(WTR_SHA1);
@@ -382,56 +355,61 @@ void transmitPacket() {
 
     wificlient.setTimeout(15000); // 15 Seconds
 
-    // 'Native' in WiFiClient because we need to push the entire clientbuffer in the API
-    // As a result copying the buffer in to a new String for HTTPClient library use is highly inefficient
-    if (!wificlient.connect(WTR_SERVER, WTR_SRVPORT)) {
-      Serial.println("HTTPS connection failed");
-    } else {
-      Serial.println("HTTPS connection up");
+    // Only need to proceed if there is data to push to the server
+    if (hashmap->size() >= 1) {
 
-      // Send request to the server:
-      wificlient.println("POST " WTR_URI " HTTP/1.1");
-      wificlient.println("Host: " WTR_SERVER);
-      wificlient.println("Accept: */*");
-      wificlient.println("Content-Type: application/json");
-      wificlient.print("Content-Length: ");
-      wificlient.println(40+(hashmap->size()*65)-1);    // 37 chars plus map size minus the last ',' char we will strip in a bit
-      //wificlient.println("Connection: close");
-      wificlient.println();
-      // Construct the REST/JSON POST data
-      wificlient.print("{\"node\":\"");
-      wificlient.print(nodename);
-      wificlient.print("\",\"clients\":\"");
-      // Loop through hashbuffer @@@FIXME@@@
-      for(int i=0; i<hashmap->size(); ++i) {
-        wificlient.print(hashmap->getData(i));
-        if(i < hashmap->size()-1) wificlient.print(",");
-      }
-      // No sanity, assume buffer can be discarded here
-      hashmap->clear();
-      wificlient.println("\"}");
-      Serial.println("POST sent");
-      
-      while (wificlient.connected()) {
-        String line = wificlient.readStringUntil('\n');
-        if (line == "\r") {
-          Serial.println("Headers received");
-          break;
+      // 'Native' in WiFiClient because we need to push the entire clientbuffer in the API
+      // As a result copying the buffer in to a new String for HTTPClient library use is highly inefficient
+      if (!wificlient.connect(WTR_SERVER, WTR_SRVPORT)) {
+        Serial.println("HTTPS connection failed");
+      } else {
+        Serial.println("HTTPS connection up");
+
+        // Send request to the server:
+        wificlient.println("POST " WTR_URI " HTTP/1.1");
+        wificlient.println("Host: " WTR_SERVER);
+        wificlient.println("Accept: */*");
+        wificlient.println("Content-Type: application/json");
+        wificlient.print("Content-Length: ");
+        wificlient.println(40+(hashmap->size()*65)-1);    // 37 chars plus map size minus the last ',' char we will strip in a bit
+        //wificlient.println("Connection: close");
+        wificlient.println();
+        // Construct the REST/JSON POST data
+        wificlient.print("{\"node\":\"");
+        wificlient.print(nodename);
+        wificlient.print("\",\"clients\":\"");
+        // Loop through hashbuffer @@@FIXME@@@
+        for(int i=0; i<hashmap->size(); ++i) {
+          wificlient.print(hashmap->getData(i));
+          if(i < hashmap->size()-1) wificlient.print(",");
         }
+        // No sanity, assume buffer can be discarded here
+        hashmap->clear();
+        wificlient.println("\"}");
+        Serial.println("POST sent");
+      
+        while (wificlient.connected()) {
+          String line = wificlient.readStringUntil('\n');
+          if (line == "\r") {
+            Serial.println("Headers received");
+            break;
+          }
+        }
+        String line = wificlient.readStringUntil('\n');
+        Serial.println("reply was:");
+        Serial.println("==========");
+        Serial.println(line);
+        Serial.println("==========");
+        Serial.println("closing connection");
+        wificlient.stop();  // DISCONNECT FROM THE SERVER
       }
-      String line = wificlient.readStringUntil('\n');
-      Serial.println("reply was:");
-      Serial.println("==========");
-      Serial.println(line);
-      Serial.println("==========");
-      Serial.println("closing connection");
-      wificlient.stop();  // DISCONNECT FROM THE SERVER
+      delay(500);  // Not sure if needed @@@FIXME@@@
     }
-    delay(500);  // Not sure if needed @@@FIXME@@@
   }
 
   wifi_station_disconnect();
   wifi_promiscuous_enable(1);
+  Serial.println("AP disconnected, back to listening");
 }
 
 //
@@ -460,6 +438,9 @@ void setup() {
   // Enable WifiManager callback to clear the cache
   wifiManager.setAPCallback(configModeCallback);
 
+  // Initial pushout call
+  pushout();
+  
   // Prepare to set promisc
   WiFi.persistent(false);
   wifi_set_opmode(STATION_MODE);            // Promiscuous works only with station mode
@@ -473,9 +454,8 @@ void setup() {
 // Main loop
 //
 void loop() {
-
   // First, check if buffer is full, if so, send it out
-  if((hashmap->size() > HASHCOUNT) || (channel == 15)) transmitPacket();
+  if((hashmap->size() > HASHCOUNT) || (channel == 15)) pushout();
 
   // Iterate through Wifi channels (2.4Ghz only)
   if (channel == 15) { channel = 1; }
