@@ -1,6 +1,0 @@
-<?php
-define("DBHOST", "<servername>"); // Database server settings
-define("DBNAME", "<databasename>");
-define("DBUSER", "<user>");
-define("DBPASS", "<password>");
-?>
