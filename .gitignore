@@ -1,2 +1,3 @@
 catcher/config.h
+server/db.php
 server/api/v0/db.php
