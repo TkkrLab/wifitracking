@@ -23,11 +23,13 @@
 #include <WiFiClientSecure.h>
 #include "SimpleMap.h"       // https://github.com/spacehuhn/SimpleMap
 #include <WiFiManager.h>
+#include <ESP8266httpUpdate.h>
 
 // Global vars
 WiFiManager wifiManager;
 WiFiClientSecure wificlient;
 char nodename[80] = "UNDEF";
+String nodeversion;
 unsigned int channel = 1;
 
 // Max number of hashes to wait for before we start to send out
@@ -355,7 +357,7 @@ void pushout() {
 
     wificlient.setTimeout(15000); // 15 Seconds
 
-    // Only need to proceed if there is data to push to the server
+    // Only need to post hashes if there is data to push to the server
     if (hashmap->size() >= 1) {
 
       // 'Native' in WiFiClient because we need to push the entire clientbuffer in the API
@@ -405,6 +407,22 @@ void pushout() {
       }
       delay(500);  // Not sure if needed @@@FIXME@@@
     }
+    
+    // Check for firmware upgrades
+    Serial.println("Checking for firmware upgrade");
+    t_httpUpdate_return ret = ESPhttpUpdate.update(wificlient, WTR_SERVER, WTR_SRVPORT, "/fw/", nodeversion);
+    switch(ret) {
+    case HTTP_UPDATE_FAILED: // HTTP 403, 404
+        Serial.println("Firmware upgrade available, but update failed");
+        break;
+    case HTTP_UPDATE_NO_UPDATES: // HTTP 304
+        Serial.println("No firmware upgrade available");
+        break;
+    case HTTP_UPDATE_OK: // HTTP 200
+        Serial.println("Firmware upgrade available, upgraded ok."); // may not called we reboot the ESP
+        break;
+    }
+    
   }
 
   wifi_station_disconnect();
@@ -431,8 +449,10 @@ void setup() {
   sprintf(nodename+9, "%02x", mac[3]);
   sprintf(nodename+11, "%02x", mac[4]);
   sprintf(nodename+13, "%02x", mac[5]);
+  nodeversion = nodename;
+  nodeversion.concat("-v" CATCHER_VERSION);
   Serial.print("Node ");
-  Serial.print(nodename);
+  Serial.print(nodeversion);
   Serial.println(" starting up.");
 
   // Enable WifiManager callback to clear the cache
