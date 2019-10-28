@@ -11,7 +11,7 @@ header("Access-Control-Max-Age: 3600");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
  
 // get database connection
-include_once '../db.php';
+include_once '../../../db.php';
  
 // get posted data
 $data = json_decode(file_get_contents("php://input"));
