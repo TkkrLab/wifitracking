@@ -1,3 +1,7 @@
+// Catcher version numbering (for OTA updating)
+//
+#define CATCHER_VERSION "1000"
+
 // WiFi Access Point for pushing the data out
 //
 #define WLAN_SSID       "<SSID>"
@@ -5,5 +9,7 @@
 
 // Server connection to push data out
 //
-#define WTR_API         "<URL>"
+#define WTR_SERVER      "<server>"
+#define WTR_SRVPORT     443
+#define WTR_URI         "/api/v0/gather/"
 
