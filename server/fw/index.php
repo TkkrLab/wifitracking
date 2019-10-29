@@ -59,7 +59,7 @@ if(
 $nodeversion = $_SERVER["HTTP_X_ESP8266_VERSION"];
 $node = substr($nodeversion, 0, 15);
 $version = substr($nodeversion, 17);
-file_put_contents ("/home/florian/apps/wtr/server/log/fw.log", "Version breakdown: Node $node running firmware $version\n", FILE_APPEND);
+//file_put_contents ("/home/florian/apps/wtr/server/log/fw.log", "Version breakdown: Node $node running firmware $version\n", FILE_APPEND);
 
 if(substr($node, 0, 3) == "WTR") {
 	// Okay, this ESP looks like it's with us...
@@ -68,21 +68,43 @@ if(substr($node, 0, 3) == "WTR") {
 	$sth = $pdo->prepare("UPDATE nodes SET version=?, lastseen=UNIX_TIMESTAMP('') WHERE node=?");
 	$sth->execute(array($version, $node));
 
-	$db = array(
-	    "18:FE:AA:AA:AA:AA" => "DOOR-7-g14f53a19",
-	    "18:FE:AA:AA:AA:BB" => "TEMP-1.0.0"
-	);
+	// Check for newer firmwares
+	$dir = dir('.');
+	while (false !== ($entry = $dir->read())) {
+		//Ignore parent- and self-links
+		if (($entry==".")||($entry=="..")) continue;
 
-	if(isset($db[$_SERVER['HTTP_X_ESP8266_STA_MAC']])) {
-	    if($db[$_SERVER['HTTP_X_ESP8266_STA_MAC']] != $_SERVER['HTTP_X_ESP8266_VERSION']) {
-	        file_put_contents ("/home/florian/apps/wtr/server/log/fw.log", "Serving firmware...\n", FILE_APPEND);
-	        sendFile($db[$_SERVER['HTTP_X_ESP8266_STA_MAC']]."bin");
-	    } else {
+		// Check for .bin files with a version encoded in there
+		if((substr($entry, 0, 10) == "WTRgeneric") && (substr($entry, -4) == ".bin")) {
+			$newgenericversion = substr($entry,12,4);
+			if(!isset($genericversion) || ($newgenericversion > $genericversion)) {
+				$genericfirmware = $entry;
+				$genericversion = substr($entry,12,4);
+				file_put_contents ("/home/florian/apps/wtr/server/log/fw.log", "Generic firmware $entry is version $genericversion\n", FILE_APPEND);
+			}
+		}
+		if((substr($entry, 0, 15) == $node) && (substr($entry, -4) == ".bin")) {
+			$newspecificversion = substr($entry,17,4);
+			if(!isset($specificversion) || ($newspecificversion > $specificversion)) {
+				$specificfirmware = $entry;
+				$specificversion = substr($entry,17,4);
+				file_put_contents ("/home/florian/apps/wtr/server/log/fw.log", "Specific firmware $entry is version $specificversion\n", FILE_APPEND);
+			}
+		}
+	}
+
+	// Now determine if an upgrade is in order
+	if(isset($specificversion) && $specificversion > $version) {
+		file_put_contents ("/home/florian/apps/wtr/server/log/fw.log", "Offering upgrade to specific firmware $specificfirmware\n", FILE_APPEND);
+	        sendFile($specificfirmware);
+	} elseif(isset($genericversion) && $genericversion > $version) {
+		file_put_contents ("/home/florian/apps/wtr/server/log/fw.log", "Should upgrade to generic firmware $genericfirmware\n", FILE_APPEND);
+	        sendFile($genericfirmware);
+	} else {
 	        file_put_contents ("/home/florian/apps/wtr/server/log/fw.log", "Already up to date\n", FILE_APPEND);
 	        header($_SERVER["SERVER_PROTOCOL"].' 304 Not Modified', true, 304);
-	    }
-	    exit();
 	}
+	exit();
 }
 
 // Catchall: It looks like it might be an ESP8266, but we have no idea what it's running and why it is asking for firmware here.
