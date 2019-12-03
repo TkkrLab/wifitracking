@@ -379,7 +379,7 @@ void pushout() {
           
           String json = "{\"node\":\"";
           json.concat(nodename);
-          json.concat("\",\"version\":\"" + nodeversion + "\",");
+          json.concat("\",\"version\":\"" CATCHER_VERSION "\",");
           json.concat("\"millis\":" + String(millis()) + "}");
 
           int httpcode = https.POST(json);
