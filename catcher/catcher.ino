@@ -349,7 +349,9 @@ void pushout() {
     return;
   }
 
-  if (wifiManager.autoConnect(nodename)) {
+  wifiManager.setConfigPortalTimeout(300); // If no configuration is done in 5 mins, exit/restart quietly
+  
+  if (wifiManager.autoConnect(nodename)) { // @@@FIXME@@@ we should really set a PSK for the AP (but in my brief testing it crashed the ESP, so what's up with that)
     Serial.println("AP connection up");
 
     //wificlient.setFingerprint(WTR_SHA1);
@@ -385,8 +387,6 @@ void pushout() {
           wificlient.print(hashmap->getData(i));
           if(i < hashmap->size()-1) wificlient.print(",");
         }
-        // No sanity, assume buffer can be discarded here
-        hashmap->clear();
         wificlient.println("\"}");
         Serial.println("POST sent");
       
@@ -424,6 +424,9 @@ void pushout() {
     }
     
   }
+
+  // No sanity, assume buffer can be discarded here
+  hashmap->clear();
 
   wifi_station_disconnect();
   wifi_promiscuous_enable(1);
