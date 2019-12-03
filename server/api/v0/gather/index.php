@@ -56,6 +56,11 @@ if(
 		}
 	}
 
+	// Update lastseen
+        $sth = $pdo->prepare("UPDATE nodes SET lastseen=UNIX_TIMESTAMP('') WHERE node=?");
+        $sth->execute(array($data->node));
+
+
 	// create or update client log for each client entry
 	$clients = explode(",", $data->clients);
 	foreach ($clients as $client) {
