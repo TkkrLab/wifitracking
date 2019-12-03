@@ -1,11 +1,6 @@
 // Catcher version numbering (for OTA updating)
 //
-#define CATCHER_VERSION "1000"
-
-// WiFi Access Point for pushing the data out
-//
-#define WLAN_SSID       "<SSID>"
-#define WLAN_PASS       "<PASSWD>"
+#define CATCHER_VERSION "1003"
 
 // Server connection to push data out
 //
