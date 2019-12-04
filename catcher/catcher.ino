@@ -373,7 +373,7 @@ void pushout() {
         Serial.println("HTTPS connection up");
 
         // Send checkin to the server:
-        if (https.begin(wificlient, "https://wtr.tty.nu/api/v0/checkin/")) {
+        if (https.begin(wificlient, "https://" WTR_SERVER WTR_CHECKIN)) {
           https.addHeader("Accept", "*/*");
           https.addHeader("Content-Type", "application/json");
           
