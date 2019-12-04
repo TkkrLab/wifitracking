@@ -23,14 +23,11 @@
 #include <WiFiClientSecure.h>
 #include "SimpleMap.h"       // https://github.com/spacehuhn/SimpleMap
 #include <WiFiManager.h>
-#include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 
 // Global vars
 WiFiManager wifiManager;
 WiFiClientSecure wificlient;
-HTTPClient https;
-
 char nodename[80] = "UNDEF";
 String nodeversion;
 unsigned int channel = 1;
@@ -135,8 +132,8 @@ void save_mac(char* mac) {
   if(hashmap->has(mac)) {
     //Serial.print(".");
   } else {
-    Serial.print("MAC **(hidden)**");
-    //Serial.print(mac);
+    Serial.print("MAC ");
+    Serial.print(mac);
 
     BYTE hash[SHA256_BLOCK_SIZE];
     char texthash[2*SHA256_BLOCK_SIZE+1];
@@ -403,6 +400,7 @@ void pushout() {
         wificlient.println("Content-Type: application/json");
         wificlient.print("Content-Length: ");
         wificlient.println(40+(hashmap->size()*65)-1);    // 37 chars plus map size minus the last ',' char we will strip in a bit
+        //wificlient.println("Connection: close");
         wificlient.println();
         // Construct the REST/JSON POST data
         wificlient.print("{\"node\":\"");
@@ -423,15 +421,11 @@ void pushout() {
             break;
           }
         }
-        while (wificlient.connected()) {
-          String line = wificlient.readStringUntil('\n');
-          if (line == "\r") {
-            Serial.println("==========");
-            break;
-          } else {
-            Serial.println(line);
-          }
-        }
+        String line = wificlient.readStringUntil('\n');
+        Serial.println("reply was:");
+        Serial.println("==========");
+        Serial.println(line);
+        Serial.println("==========");
         Serial.println("closing connection");
         wificlient.stop();  // DISCONNECT FROM THE SERVER
       }
