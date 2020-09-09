@@ -1,7 +1,7 @@
 # WTR a.k.a. Sekfi
 A proof of concept to monitor movement of crowds by analysing 2.4Ghz Wifi devices over time.
 
-**PLEASE NOTE: This project is AbandonWare. **
+**PLEASE NOTE: This project is AbandonWare.**
 
 The project was initiated because we wanted to understand how some Dutch municipalities perform crowd measurements utilising Wifi Tracking. We attempted to approach their methods as closely as possible based on the little information we had, to find out if this was in fact as 'anonymous' as they are telling us.
 
