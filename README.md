@@ -9,7 +9,7 @@ Also, it is obviously fun to reproduce commercial IoT solutions on shoestring bu
 
 **WARNING: This software was not intended to ever run production. It could be used to violate peoples privacy. Please don't.**
 
-Our approach uses commodity ESP8266 devices (the catchers) (under 5,- per unit) and some php scripts on a shared webserver. The sensors scan all 2.4Ghz Wifi channels for activity, register client packets, hash them for pseudonimity and once in a while push the hashed data to the server. On the server the hashes are truncated for better anonimity and correlated so a start and stop time for each client in sight of a catcher is registered.
+Our approach uses commodity ESP8266 devices (the catchers) (under 5,- per unit) and some php scripts on a shared webserver. The catchers scan all 2.4Ghz Wifi channels for activity, register client packets, hash them for pseudonimity and once in a while push the hashed data to the server. On the server the hashes are truncated for better anonimity and correlated so a start and stop time for each client in sight of a catcher is registered.
 
 This way we gather 'sessions' of Wifi activity in a certain area. With each catcher it is possible to store geolocation data, which should enable the operator to generate heatmaps over time. Also, in our opinion this method still allows for real 'tracking' because the hashing algorithm does not utilise a catcher specific element. The truncation of hash data still allows for a very small collision rate, allowing people to learn which hash belongs to who. To make this truly anonymous further measures are needed. For instance by adding a salt based on the catcher mac-address and maybe some time factor.
 
