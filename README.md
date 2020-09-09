@@ -15,4 +15,4 @@ This way we gather 'sessions' of Wifi activity in a certain area. With each catc
 
 Potential further steps include the above improvements in anonymisation, proper and automated expiration of data, reporting tools like heatmaps etc. and much more.
 
-Even though we were not able to debunk our concerns that Wifitracking is sufficiently anonymous, we decided to not proceed with this project any longer. 
+Even though we were not able to debunk our concerns that Wifitracking is not sufficiently anonymous, we decided to not proceed with this project any longer. 
